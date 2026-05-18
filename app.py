@@ -313,7 +313,6 @@ elif opcion == "Comparación de dos cursos":
     st.markdown("Selecciona dos cursos y aplica filtros por requisitos para ver cuántos estudiantes coinciden en el interés.")
 
     # ---------- Filtros de requisitos ----------
-    st.markdown("### 🎯 Filtrar por estado de requisitos")
     st.markdown("Solo se contarán estudiantes que hayan respondido **Sí** y cumplan al menos una de las condiciones seleccionadas.")
 
     opciones_requisitos = [
