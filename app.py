@@ -51,7 +51,8 @@ opcion = st.sidebar.radio(
     "Quiero ver:",
     ["Estadísticas generales", 
      "Resumen por curso electivo",
-     "Resultados globales de electivas"],
+     "Resultados globales de electivas",
+     "Comparación de dos cursos"],
     index=0
 )
 
@@ -303,3 +304,79 @@ elif opcion == "Resultados globales de electivas":
 
     st.caption("💡 Solo se consideran estudiantes que marcaron **Sí** en la pregunta de interés. "
                "Si el curso no tiene columna de requisitos, se cuentan todos los que dijeron Sí sin filtrar.")
+
+# ============================================
+# SECCIÓN 4: COMPARACIÓN DE DOS CURSOS
+# ============================================
+elif opcion == "Comparación de dos cursos":
+    st.header("🔍 Comparación de dos cursos electivos")
+    st.markdown("Selecciona dos cursos para ver cuántos estudiantes están interesados en ambos, y su distribución por año de ingreso.")
+
+    # Selectores en columnas
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+        curso_A_nombre = st.selectbox("Curso A:", nombres_ordenados, index=0, key="cursoA")
+    with col_sel2:
+        # El índice por defecto será 1 si hay al menos 2 cursos, para evitar que coincida con A
+        default_B = 1 if len(nombres_ordenados) > 1 else 0
+        curso_B_nombre = st.selectbox("Curso B:", nombres_ordenados, index=default_B, key="cursoB")
+
+    if curso_A_nombre == curso_B_nombre:
+        st.warning("Selecciona dos cursos diferentes para comparar.")
+    else:
+        codigo_A = nombre_a_codigo[curso_A_nombre]
+        codigo_B = nombre_a_codigo[curso_B_nombre]
+        col_interes_A = f"Interés {codigo_A}"
+        col_interes_B = f"Interés {codigo_B}"
+
+        if col_interes_A not in df.columns or col_interes_B not in df.columns:
+            st.error("Uno de los cursos no tiene datos de interés.")
+        else:
+            # Conjuntos de estudiantes que marcaron "Sí"
+            carnets_A = set(df[df[col_interes_A] == "Sí"]["Carné"].unique())
+            carnets_B = set(df[df[col_interes_B] == "Sí"]["Carné"].unique())
+            comunes = carnets_A & carnets_B
+
+            st.metric("👥 Estudiantes interesados en ambos cursos", len(comunes))
+
+            # Asegurar que existe la columna de año de ingreso
+            if "Año de ingreso" not in df.columns:
+                df["Año de ingreso"] = df["Carné"].astype(str).str[:4].astype(int)
+
+            def grafico_por_curso(nombre_curso, codigo, color_scale):
+                """Genera una barra con la cantidad de estudiantes interesados por año de ingreso."""
+                col = f"Interés {codigo}"
+                df_curso = df[df[col] == "Sí"].copy()
+                # Agrupar por año y contar estudiantes únicos
+                por_anio = df_curso.groupby("Año de ingreso")["Carné"].nunique().reset_index()
+                por_anio.columns = ["Año", "Cantidad"]
+                por_anio = por_anio.sort_values("Año")
+
+                fig = px.bar(
+                    por_anio,
+                    x="Año",
+                    y="Cantidad",
+                    title=f"{nombre_curso}<br>Interesados totales: {len(df_curso)}",
+                    text="Cantidad",
+                    color="Cantidad",
+                    color_continuous_scale=color_scale
+                )
+                fig.update_layout(
+                    showlegend=False,
+                    height=400,
+                    margin=dict(l=20, r=20, t=60, b=20),
+                    xaxis_title="Año de ingreso",
+                    yaxis_title="Cantidad de estudiantes",
+                    xaxis=dict(tickmode='linear', dtick=1)  # mostrar todos los años
+                )
+                fig.update_traces(textposition='outside')
+                return fig
+
+            # Mostrar gráficos lado a lado
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                fig_A = grafico_por_curso(curso_A_nombre, codigo_A, "Blues")
+                st.plotly_chart(fig_A, use_container_width=True)
+            with col_g2:
+                fig_B = grafico_por_curso(curso_B_nombre, codigo_B, "Reds")
+                st.plotly_chart(fig_B, use_container_width=True)
