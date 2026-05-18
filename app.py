@@ -246,9 +246,9 @@ elif opcion == "Resultados globales de electivas":
     total_cursos = len(codigos_nombres)
     top_n = st.slider(
         "Cantidad de cursos a mostrar:",
-        min_value=3,
+        min_value=2,
         max_value=total_cursos,
-        value=min(10, total_cursos),
+        value=total_cursos,
         step=1
     )
 
