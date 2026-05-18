@@ -21,8 +21,11 @@ st.markdown("Visualiza estadísticas del sondeo de electivas para el primer seme
 def cargar_datos():
     ruta_base = Path(__file__).parent
     ruta_csv = ruta_base / "prematricula_preprocesada.csv"
-    
     df = pd.read_csv(ruta_csv)
+    
+    # Crear columna de año de ingreso (disponible para toda la app)
+    df["Año de ingreso"] = df["Carné"].astype(str).str[:4].astype(int)
+    
     return df
 
 df = cargar_datos()
@@ -65,10 +68,7 @@ if opcion == "Estadísticas generales":
     # Total de participantes
     total_participantes = len(df)
     st.metric(label="👥 Total de participantes", value=total_participantes)
-
-    # Extraer año de ingreso desde el carné 
-    df["Año de ingreso"] = df["Carné"].astype(str).str[:4].astype(int)
-
+    
     # Conteo de estudiantes por año (ordenado cronológicamente)
     conteo_por_anio = (
         df["Año de ingreso"]
@@ -310,16 +310,35 @@ elif opcion == "Resultados globales de electivas":
 # ============================================
 elif opcion == "Comparación de dos cursos":
     st.header("🔍 Comparación de dos cursos electivos")
-    st.markdown("Selecciona dos cursos para ver cuántos estudiantes están interesados en ambos, y su distribución por año de ingreso.")
+    st.markdown("Selecciona dos cursos y aplica filtros por requisitos para ver cuántos estudiantes coinciden en el interés.")
 
-    # Selectores en columnas
+    # ---------- Filtros de requisitos ----------
+    st.markdown("### 🎯 Filtrar por estado de requisitos")
+    st.markdown("Solo se contarán estudiantes que hayan respondido **Sí** y cumplan al menos una de las condiciones seleccionadas.")
+
+    opciones_requisitos = [
+        "Actualmente cumplo con todos los requisitos",
+        "Cumpliré con todos los requisitos al finalizar el I Semestre 2026",
+        "Cumpliré con todos los requisitos al finalizar el II Semestre 2026",
+        "No cumplo ninguno de los puntos anteriores"
+    ]
+
+    seleccionados = {}
+    for req in opciones_requisitos:
+        seleccionados[req] = st.checkbox(req, value=True, key=f"comp_{req}")
+    categorias_activas = [req for req, activo in seleccionados.items() if activo]
+
+    if not categorias_activas:
+        st.warning("Selecciona al menos una categoría de requisitos para visualizar los datos.")
+        st.stop()
+
+    # ---------- Selectores de cursos ----------
     col_sel1, col_sel2 = st.columns(2)
     with col_sel1:
-        curso_A_nombre = st.selectbox("Curso A:", nombres_ordenados, index=0, key="cursoA")
+        curso_A_nombre = st.selectbox("Curso A:", nombres_ordenados, index=0, key="comp_cursoA")
     with col_sel2:
-        # El índice por defecto será 1 si hay al menos 2 cursos, para evitar que coincida con A
         default_B = 1 if len(nombres_ordenados) > 1 else 0
-        curso_B_nombre = st.selectbox("Curso B:", nombres_ordenados, index=default_B, key="cursoB")
+        curso_B_nombre = st.selectbox("Curso B:", nombres_ordenados, index=default_B, key="comp_cursoB")
 
     if curso_A_nombre == curso_B_nombre:
         st.warning("Selecciona dos cursos diferentes para comparar.")
@@ -328,27 +347,32 @@ elif opcion == "Comparación de dos cursos":
         codigo_B = nombre_a_codigo[curso_B_nombre]
         col_interes_A = f"Interés {codigo_A}"
         col_interes_B = f"Interés {codigo_B}"
+        col_requisitos_A = f"Requisitos {codigo_A}"
+        col_requisitos_B = f"Requisitos {codigo_B}"
 
         if col_interes_A not in df.columns or col_interes_B not in df.columns:
             st.error("Uno de los cursos no tiene datos de interés.")
         else:
-            # Conjuntos de estudiantes que marcaron "Sí"
-            carnets_A = set(df[df[col_interes_A] == "Sí"]["Carné"].unique())
-            carnets_B = set(df[df[col_interes_B] == "Sí"]["Carné"].unique())
+            # Función para obtener estudiantes filtrados
+            def obtener_interesados_filtrados(col_interes, col_requisitos):
+                interesados = df[df[col_interes] == "Sí"]
+                if col_requisitos in df.columns:
+                    return interesados[interesados[col_requisitos].isin(categorias_activas)]
+                else:
+                    return interesados
+
+            df_A_filtrado = obtener_interesados_filtrados(col_interes_A, col_requisitos_A)
+            df_B_filtrado = obtener_interesados_filtrados(col_interes_B, col_requisitos_B)
+
+            carnets_A = set(df_A_filtrado["Carné"].unique())
+            carnets_B = set(df_B_filtrado["Carné"].unique())
             comunes = carnets_A & carnets_B
 
-            st.metric("👥 Estudiantes interesados en ambos cursos", len(comunes))
+            st.metric("👥 Estudiantes interesados en ambos cursos (según filtros)", len(comunes))
 
-            # Asegurar que existe la columna de año de ingreso
-            if "Año de ingreso" not in df.columns:
-                df["Año de ingreso"] = df["Carné"].astype(str).str[:4].astype(int)
-
-            def grafico_por_curso(nombre_curso, codigo, color_scale):
-                """Genera una barra con la cantidad de estudiantes interesados por año de ingreso."""
-                col = f"Interés {codigo}"
-                df_curso = df[df[col] == "Sí"].copy()
-                # Agrupar por año y contar estudiantes únicos
-                por_anio = df_curso.groupby("Año de ingreso")["Carné"].nunique().reset_index()
+            # Función para gráfico por curso (Año de ingreso ya existe en df)
+            def grafico_por_curso(df_curso_filtrado, nombre_curso, color_scale):
+                por_anio = df_curso_filtrado.groupby("Año de ingreso")["Carné"].nunique().reset_index()
                 por_anio.columns = ["Año", "Cantidad"]
                 por_anio = por_anio.sort_values("Año")
 
@@ -356,7 +380,7 @@ elif opcion == "Comparación de dos cursos":
                     por_anio,
                     x="Año",
                     y="Cantidad",
-                    title=f"{nombre_curso}<br>Interesados totales: {len(df_curso)}",
+                    title=f"{nombre_curso}<br>Interesados (filtrados): {len(df_curso_filtrado)}",
                     text="Cantidad",
                     color="Cantidad",
                     color_continuous_scale=color_scale
@@ -367,16 +391,15 @@ elif opcion == "Comparación de dos cursos":
                     margin=dict(l=20, r=20, t=60, b=20),
                     xaxis_title="Año de ingreso",
                     yaxis_title="Cantidad de estudiantes",
-                    xaxis=dict(tickmode='linear', dtick=1)  # mostrar todos los años
+                    xaxis=dict(tickmode='linear', dtick=1)
                 )
                 fig.update_traces(textposition='outside')
                 return fig
 
-            # Mostrar gráficos lado a lado
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                fig_A = grafico_por_curso(curso_A_nombre, codigo_A, "Blues")
+                fig_A = grafico_por_curso(df_A_filtrado, curso_A_nombre, "Blues")
                 st.plotly_chart(fig_A, use_container_width=True)
             with col_g2:
-                fig_B = grafico_por_curso(curso_B_nombre, codigo_B, "Reds")
+                fig_B = grafico_por_curso(df_B_filtrado, curso_B_nombre, "Reds")
                 st.plotly_chart(fig_B, use_container_width=True)
