@@ -3,8 +3,6 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 import os
-from streamlit_extras.metric_cards import *
-
 
 # Configuración de la página
 st.set_page_config(
